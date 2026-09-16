@@ -1,0 +1,45 @@
+[package]
+name        = "libglfw-sys"
+version     = "0.1.0"
+description = "Bindings over libglfw, the GLFW window and input library: the library, the monitors and their video modes, the window with its hints and its state, the event pump, the polled keyboard, mouse and clipboard, the timer, and the OpenGL context and Vulkan surface calls, one declaration per C entry point."
+license     = "Apache-2.0"
+
+# NOT a `0.0.x` draft.  An interface release is the shape whose every
+# `pub fn` body is a `todo()`, and every `pub fn` here is an `@ffi`
+# declaration with no body at all — `novo pkg publish` reads that as a
+# release with bodies and refuses a `0.0.x` version for it.
+stability   = "experimental"
+
+# `sys`: the layer for a package that binds one C library and decides
+# nothing of its own.  Every `pub fn` below is an `@ffi` declaration of
+# a function in GLFW.
+layer       = "sys"
+
+category    = "bindings"
+
+# The one C library.  `libglfw.so` is what the loader resolves these
+# symbols against; the Debian and Ubuntu package installs it as
+# `libglfw.so.3` with the development symlink in `libglfw3-dev`.
+# Installing this package does not install it.
+wraps       = "libglfw"
+
+tags        = ["ffi", "glfw", "window", "input", "opengl", "vulkan", "bindings"]
+repository  = "https://github.com/novolang/libglfw-sys"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+[docs.pages]
+"README.md" = "The C entry points of libglfw, one novo-lang declaration each"
+
+[dependencies]
+# None.  A binding over one C library depends on no novo-lang package.
+
+# The link flag for the `library = "glfw"` name every declaration in
+# `src/` carries.  `libglfw3-dev` installs
+# `/usr/lib/<arch>/pkgconfig/glfw3.pc`, so pkg-config answers `-lglfw`
+# on Debian and Ubuntu.  The pkg-config name is `glfw3` and the library
+# name is `glfw`; without the block the default is `-lglfw`, which is
+# the same flag on a system that put the library somewhere the linker
+# already looks.
+[ffi.glfw]
+pkg_config = "glfw3"

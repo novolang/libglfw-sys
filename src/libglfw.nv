@@ -1,0 +1,562 @@
+// The C entry points of libglfw, one novo-lang declaration each.
+//
+// A pointer is an `Int`: the C API hands out opaque handles for the
+// window, the monitor and the cursor, and this module carries each of
+// them as the address the C library returned.  Zero is the null
+// pointer, and it is also what every creation call answers on failure.
+//
+// An out-parameter is the address of a slot the caller owns.  GLFW
+// answers a pair of numbers that way rather than by returning a
+// structure, so a position, a size and a scale each arrive in two
+// slots.  `ptr.alloc_word` reserves one and `ptr.read_word` reads it
+// back.  A slot GLFW writes a C `int` into holds it in its low four
+// bytes.
+//
+// GLFW REPORTS EVERY EVENT THROUGH A C FUNCTION POINTER, and a
+// novo-lang program cannot produce one, so not one `glfwSet*Callback`
+// entry point is here.  What is left is the polling half of the same
+// interface: `glfwPollEvents` drains the queue, and `glfwGetKey`,
+// `glfwGetMouseButton`, `glfwGetCursorPos` and `glfwWindowShouldClose`
+// are asked afterwards what it did.  A game loop written that way
+// works.  Typed text, the scroll wheel, dropped files and the
+// per-window resize notification have NO polled form, and they are
+// therefore out of reach rather than merely out of this release.  The
+// README's "What is not included" section names them one by one.
+//
+// A C `float` is out of reach as well.  An `@ffi` declaration has one
+// floating point type, `Float`, and it is a C `double`, so
+// `glfwSetWindowOpacity`, `glfwGetWindowOpacity` and `glfwSetGamma`
+// cannot be declared.  A `double` is fine, which is why the time and
+// the cursor position are here.  A `float` BEHIND A POINTER is half
+// fine: `glfwGetMonitorContentScale` and `glfwGetWindowContentScale`
+// write two of them into slots the caller owns, and the standard
+// library can write a 32-bit float with `ptr.write_f32` but has no
+// call that reads one back.
+//
+// A C `int` return arrives in 32 bits.  GLFW's booleans are 1 and 0
+// and its key and button codes are positive, but `glfwGetError`
+// answers codes such as 0x00010001 and `glfwGetKey` answers -1 for an
+// unknown key, so bind an answer to a local with `as i32` before
+// comparing it with a negative number.
+//
+// Almost every entry point carries `[io, ffi]`: GLFW talks to a
+// display server, a window manager and an input device.  The two that
+// only read a compiled-in constant carry `[ffi]` alone.
+
+// Get the version of the library as three numbers.
+//
+// `major`, `minor` and `rev` are addresses of slots, each of which
+// receives a C `int`.  This is the one call besides
+// `glfwGetVersionString` that works before `glfwInit` and after
+// `glfwTerminate`.
+pub @ffi(library = "glfw", symbol = "glfwGetVersion")
+fn glfw_get_version(major: Int, minor: Int, rev: Int) [ffi]
+
+// Get the version of the library as text.
+//
+// The answer is the address of a static string naming the version, the
+// platforms the library was compiled for and the options it was built
+// with.  It is for a bug report, not for a version test.
+pub @ffi(library = "glfw", symbol = "glfwGetVersionString")
+fn glfw_get_version_string() -> Int [ffi]
+
+// Set a hint that applies to the next initialisation.
+//
+// The hint must be set before `glfwInit`.  Hint 0x00050001 is whether
+// the joystick hat buttons are exposed and 0x00051001 is whether macOS
+// looks for a bundled menu; `value` is 1 or 0.
+pub @ffi(library = "glfw", symbol = "glfwInitHint")
+fn glfw_init_hint(hint: Int, value: Int) [io, ffi]
+
+// Start the library.
+//
+// Answers 1 on success and 0 on failure, with the reason available
+// from `glfwGetError`.  Calling it again once it has succeeded does
+// nothing and answers 1.
+pub @ffi(library = "glfw", symbol = "glfwInit")
+fn glfw_init() -> Int [io, ffi]
+
+// Stop the library and release everything it made.
+//
+// Every window, cursor and context is destroyed, whether the program
+// destroyed it or not, and every handle the program still holds
+// becomes invalid.
+pub @ffi(library = "glfw", symbol = "glfwTerminate")
+fn glfw_terminate() [io, ffi]
+
+// Take the last error off the queue.
+//
+// `description` is the address of a slot receiving the address of a
+// string the library owns, or 0 for no description; pass 0 to ignore
+// it.  Answers 0x00000000 when there was no error, and a code such as
+// 0x00010001, `GLFW_NOT_INITIALIZED`, or 0x00010008,
+// `GLFW_FORMAT_UNAVAILABLE`, when there was.  The string is only valid
+// until the next error.
+pub @ffi(library = "glfw", symbol = "glfwGetError")
+fn glfw_get_error(description: Int) -> Int [io, ffi]
+
+// List the monitors attached to the machine.
+//
+// `count` is the address of a slot receiving how many there are.  The
+// answer is the address of an array of that many handles, owned by the
+// library, and it stops being valid when a monitor is connected or
+// disconnected.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitors")
+fn glfw_get_monitors(count: Int) -> Int [io, ffi]
+
+// Get the monitor the window manager treats as primary.
+//
+// Answers 0 when there is none.  It is where a window appears when
+// nothing says otherwise.
+pub @ffi(library = "glfw", symbol = "glfwGetPrimaryMonitor")
+fn glfw_get_primary_monitor() -> Int [io, ffi]
+
+// Get a monitor's position in the virtual screen, in screen
+// coordinates.
+//
+// `xpos` and `ypos` are addresses of slots.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitorPos")
+fn glfw_get_monitor_pos(monitor: Int, xpos: Int, ypos: Int) [io, ffi]
+
+// Get the part of a monitor a maximised window may use.
+//
+// The four slots receive the position and the size of the area left
+// once the window manager's own bars are taken out.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitorWorkarea")
+fn glfw_get_monitor_workarea(monitor: Int, xpos: Int, ypos: Int, width: Int, height: Int) [io, ffi]
+
+// Get a monitor's physical size in millimetres.
+//
+// The numbers come from the display's own data and some displays lie
+// about them, so a program that wants a real-world size should not
+// trust them alone.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitorPhysicalSize")
+fn glfw_get_monitor_physical_size(monitor: Int, width_mm: Int, height_mm: Int) [io, ffi]
+
+// Get a monitor's content scale.
+//
+// `xscale` and `yscale` are addresses of slots receiving a 32-bit
+// FLOAT each, which is the ratio of the monitor's dots per inch to the
+// platform's own.  The standard library has no call that reads a
+// 32-bit float back out of memory, so the two values are reachable
+// only as their raw bits.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitorContentScale")
+fn glfw_get_monitor_content_scale(monitor: Int, xscale: Int, yscale: Int) [io, ffi]
+
+// Get a monitor's human-readable name.
+//
+// The answer is the address of a string the library owns.  It is not
+// guaranteed to be unique across monitors.
+pub @ffi(library = "glfw", symbol = "glfwGetMonitorName")
+fn glfw_get_monitor_name(monitor: Int) -> Int [io, ffi]
+
+// Get a monitor's current video mode.
+//
+// The answer is the address of a 24-byte record the library owns: the
+// width, the height, the red, green and blue bit depths and the
+// refresh rate, each a C `int`.
+pub @ffi(library = "glfw", symbol = "glfwGetVideoMode")
+fn glfw_get_video_mode(monitor: Int) -> Int [io, ffi]
+
+// List the video modes a monitor supports.
+//
+// `count` is the address of a slot receiving how many there are.  The
+// answer is the address of an array of 24-byte records, sorted by bit
+// depth and then by resolution and then by refresh rate.
+pub @ffi(library = "glfw", symbol = "glfwGetVideoModes")
+fn glfw_get_video_modes(monitor: Int, count: Int) -> Int [io, ffi]
+
+// Put every window hint back to its default.
+//
+// The hints are library state and survive window creation, so a
+// program that sets one for one window resets it for the next.
+pub @ffi(library = "glfw", symbol = "glfwDefaultWindowHints")
+fn glfw_default_window_hints() [io, ffi]
+
+// Set a hint that applies to the next window created.
+//
+// 0x00020003 is whether the window is resizable, 0x00020004 whether it
+// is visible, 0x00021001 the client interface — 0x00030001 for OpenGL
+// and 0 for none, which is what a Vulkan program asks for — and
+// 0x00022002 and 0x00022003 the OpenGL version.  `value` is a number
+// or -1 for "do not care".
+pub @ffi(library = "glfw", symbol = "glfwWindowHint")
+fn glfw_window_hint(hint: Int, value: Int) [io, ffi]
+
+// Set a hint whose value is a string.
+//
+// 0x00023001 and 0x00023002 are the X11 class and instance names, and
+// 0x00025002 is the Wayland application identifier.
+pub @ffi(library = "glfw", symbol = "glfwWindowHintString")
+fn glfw_window_hint_string(hint: Int, value: Str) [io, ffi]
+
+// Create a window, and a context for it when one was asked for.
+//
+// `monitor` is 0 for a windowed window and a monitor handle for a full
+// screen one.  `share` is 0, or another window whose context this one
+// shares its objects with.  Answers 0 on failure, with the reason
+// available from `glfwGetError`.
+pub @ffi(library = "glfw", symbol = "glfwCreateWindow")
+fn glfw_create_window(width: Int, height: Int, title: Str, monitor: Int,
+                      share: Int) -> Int [io, ffi]
+
+// Destroy a window and its context.
+//
+// The handle becomes invalid.  Destroying the window whose context is
+// current makes no context current.
+pub @ffi(library = "glfw", symbol = "glfwDestroyWindow")
+fn glfw_destroy_window(window: Int) [io, ffi]
+
+// Ask whether a window has been asked to close.
+//
+// Answers 1 when the user has pressed the close button or the program
+// has set the flag.  This is the condition of the main loop, and it is
+// the polled form of the close callback.
+pub @ffi(library = "glfw", symbol = "glfwWindowShouldClose")
+fn glfw_window_should_close(window: Int) -> Int [io, ffi]
+
+// Set or clear a window's close flag.
+//
+// Setting it is how a program leaves its own main loop, and clearing
+// it is how a program refuses the user's close button.
+pub @ffi(library = "glfw", symbol = "glfwSetWindowShouldClose")
+fn glfw_set_window_should_close(window: Int, value: Int) [io, ffi]
+
+// Set a window's title.
+//
+// The string is UTF-8 and is copied, so the caller need not keep it.
+pub @ffi(library = "glfw", symbol = "glfwSetWindowTitle")
+fn glfw_set_window_title(window: Int, title: Str) [io, ffi]
+
+// Get a window's position, in screen coordinates.
+//
+// `xpos` and `ypos` are addresses of slots, and the position is that
+// of the top left corner of the content area, not of the frame.
+pub @ffi(library = "glfw", symbol = "glfwGetWindowPos")
+fn glfw_get_window_pos(window: Int, xpos: Int, ypos: Int) [io, ffi]
+
+// Move a window, in screen coordinates.
+//
+// A full screen window cannot be moved, and some window managers
+// ignore the request for an ordinary one.
+pub @ffi(library = "glfw", symbol = "glfwSetWindowPos")
+fn glfw_set_window_pos(window: Int, xpos: Int, ypos: Int) [io, ffi]
+
+// Get a window's size, in screen coordinates.
+//
+// This is the size of the content area.  It is NOT the size of the
+// framebuffer on a display whose content scale is not one:
+// `glfwGetFramebufferSize` answers that.
+pub @ffi(library = "glfw", symbol = "glfwGetWindowSize")
+fn glfw_get_window_size(window: Int, width: Int, height: Int) [io, ffi]
+
+// Resize a window, in screen coordinates.
+//
+// For a full screen window this selects the video mode instead.
+pub @ffi(library = "glfw", symbol = "glfwSetWindowSize")
+fn glfw_set_window_size(window: Int, width: Int, height: Int) [io, ffi]
+
+// Get a window's framebuffer size, in pixels.
+//
+// This is the size to give to `glViewport` or to a Vulkan swapchain.
+// Polling it each frame is the substitute for the framebuffer size
+// callback, which this package cannot declare.
+pub @ffi(library = "glfw", symbol = "glfwGetFramebufferSize")
+fn glfw_get_framebuffer_size(window: Int, width: Int, height: Int) [io, ffi]
+
+// Get a window's content scale.
+//
+// The two slots receive a 32-bit FLOAT each, with the same limitation
+// as `glfwGetMonitorContentScale`.
+pub @ffi(library = "glfw", symbol = "glfwGetWindowContentScale")
+fn glfw_get_window_content_scale(window: Int, xscale: Int, yscale: Int) [io, ffi]
+
+// Minimise a window.
+//
+// A full screen window's video mode is restored to the monitor's own
+// while it is minimised.
+pub @ffi(library = "glfw", symbol = "glfwIconifyWindow")
+fn glfw_iconify_window(window: Int) [io, ffi]
+
+// Restore a window that was minimised or maximised.
+pub @ffi(library = "glfw", symbol = "glfwRestoreWindow")
+fn glfw_restore_window(window: Int) [io, ffi]
+
+// Maximise a window.
+//
+// A full screen window is unaffected.
+pub @ffi(library = "glfw", symbol = "glfwMaximizeWindow")
+fn glfw_maximize_window(window: Int) [io, ffi]
+
+// Make a window visible.
+//
+// A window created with hint 0x00020004 set to 0 starts hidden, which
+// is how a program finishes setting up before anything is drawn.
+pub @ffi(library = "glfw", symbol = "glfwShowWindow")
+fn glfw_show_window(window: Int) [io, ffi]
+
+// Hide a window.
+pub @ffi(library = "glfw", symbol = "glfwHideWindow")
+fn glfw_hide_window(window: Int) [io, ffi]
+
+// Give a window the input focus.
+//
+// It takes the focus away from whatever had it, which is why it should
+// be used only when the user asked for it.
+pub @ffi(library = "glfw", symbol = "glfwFocusWindow")
+fn glfw_focus_window(window: Int) [io, ffi]
+
+// Get one of a window's attributes.
+//
+// 0x00020001 is whether the window has the focus, 0x00020002 whether
+// it is minimised, 0x00020004 whether it is visible, 0x00020003
+// whether it is resizable and 0x00020008 whether it is maximised.
+// Answers 1 or 0.
+pub @ffi(library = "glfw", symbol = "glfwGetWindowAttrib")
+fn glfw_get_window_attrib(window: Int, attrib: Int) -> Int [io, ffi]
+
+// Set one of the attributes a window allows to change.
+//
+// Only the decoration, the resizability, the floating flag, the
+// auto-minimise flag and the focus-on-show flag may be set after the
+// window exists.
+pub @ffi(library = "glfw", symbol = "glfwSetWindowAttrib")
+fn glfw_set_window_attrib(window: Int, attrib: Int, value: Int) [io, ffi]
+
+// Get the monitor a window is full screen on.
+//
+// Answers 0 for a windowed window.
+pub @ffi(library = "glfw", symbol = "glfwGetWindowMonitor")
+fn glfw_get_window_monitor(window: Int) -> Int [io, ffi]
+
+// Move a window between windowed and full screen.
+//
+// `monitor` 0 makes the window windowed at the given position and
+// size, and a monitor handle makes it full screen with the given size
+// and refresh rate.  `refresh_rate` may be -1 for "do not care".
+pub @ffi(library = "glfw", symbol = "glfwSetWindowMonitor")
+fn glfw_set_window_monitor(window: Int, monitor: Int, xpos: Int, ypos: Int, width: Int, height: Int,
+                           refresh_rate: Int) [io, ffi]
+
+// Take every event that has arrived and update the windows.
+//
+// This is the call that makes `glfwWindowShouldClose`, `glfwGetKey`
+// and `glfwGetCursorPos` answer anything new.  A program that draws
+// every frame calls it once per frame.
+pub @ffi(library = "glfw", symbol = "glfwPollEvents")
+fn glfw_poll_events() [io, ffi]
+
+// Wait until an event arrives, then take every event that has.
+//
+// This is the call for a program that draws only when something
+// happened, and it uses no processor while it waits.
+pub @ffi(library = "glfw", symbol = "glfwWaitEvents")
+fn glfw_wait_events() [io, ffi]
+
+// Wait for an event, or for a number of seconds.
+//
+// `timeout` is a C `double` and is the one floating point value this
+// package passes.
+pub @ffi(library = "glfw", symbol = "glfwWaitEventsTimeout")
+fn glfw_wait_events_timeout(timeout: Float) [io, ffi]
+
+// Wake a thread waiting in `glfwWaitEvents`.
+//
+// This is how another thread tells the event thread that there is
+// something to do.
+pub @ffi(library = "glfw", symbol = "glfwPostEmptyEvent")
+fn glfw_post_empty_event() [io, ffi]
+
+// Make a window's OpenGL context current on the calling thread.
+//
+// `window` 0 makes no context current.  A context is current on one
+// thread at a time.
+pub @ffi(library = "glfw", symbol = "glfwMakeContextCurrent")
+fn glfw_make_context_current(window: Int) [io, ffi]
+
+// Get the window whose context is current on this thread.
+//
+// Answers 0 when none is.
+pub @ffi(library = "glfw", symbol = "glfwGetCurrentContext")
+fn glfw_get_current_context() -> Int [io, ffi]
+
+// Show a window's back buffer.
+//
+// The window must have an OpenGL context.  A Vulkan program presents
+// through its swapchain instead and never calls this.
+pub @ffi(library = "glfw", symbol = "glfwSwapBuffers")
+fn glfw_swap_buffers(window: Int) [io, ffi]
+
+// Set how many screen refreshes to wait before swapping.
+//
+// 0 swaps immediately and 1 waits for the vertical blank.  It applies
+// to the context that is current.
+pub @ffi(library = "glfw", symbol = "glfwSwapInterval")
+fn glfw_swap_interval(interval: Int) [io, ffi]
+
+// Get the address of an OpenGL function.
+//
+// Answers 0 when the current context does not have it.  The address is
+// one a novo-lang program CANNOT CALL, so this entry point is here to
+// test whether a function exists and not to reach it.
+pub @ffi(library = "glfw", symbol = "glfwGetProcAddress")
+fn glfw_get_proc_address(procname: Str) -> Int [io, ffi]
+
+// Ask whether the current context supports an OpenGL extension.
+//
+// Answers 1 when it does.
+pub @ffi(library = "glfw", symbol = "glfwExtensionSupported")
+fn glfw_extension_supported(extension: Str) -> Int [io, ffi]
+
+// Get or set how a window treats an input device.
+//
+// Mode 0x00033001 is the cursor: 0x00034001 shows it, 0x00034002 hides
+// it inside the window and 0x00034003 grabs it for a first-person
+// camera.  Mode 0x00033002 is sticky keys, 0x00033003 sticky mouse
+// buttons and 0x00033005 raw mouse motion.
+pub @ffi(library = "glfw", symbol = "glfwGetInputMode")
+fn glfw_get_input_mode(window: Int, mode: Int) -> Int [io, ffi]
+
+// Set how a window treats an input device.
+//
+// The modes are those of `glfwGetInputMode`.
+pub @ffi(library = "glfw", symbol = "glfwSetInputMode")
+fn glfw_set_input_mode(window: Int, mode: Int, value: Int) [io, ffi]
+
+// Ask whether raw mouse motion is available on this machine.
+//
+// Answers 1 when it is.  Raw motion is unscaled and unaccelerated, and
+// it is what a camera wants; it works only while the cursor is
+// grabbed.
+pub @ffi(library = "glfw", symbol = "glfwRawMouseMotionSupported")
+fn glfw_raw_mouse_motion_supported() -> Int [io, ffi]
+
+// Get whether a key is down.
+//
+// `key` is a key code: 32 is space, 256 escape, 257 enter, 262 to 265
+// the arrows and 65 to 90 the letters A to Z.  Answers 1 while the key
+// is down and 0 otherwise, or -1 when the key code is not one GLFW
+// knows.  With sticky keys on, a press that has not been read yet
+// answers 1 even if the key is already up again.
+pub @ffi(library = "glfw", symbol = "glfwGetKey")
+fn glfw_get_key(window: Int, key: Int) -> Int [io, ffi]
+
+// Get the name a key prints on the current keyboard layout.
+//
+// The answer is the address of a UTF-8 string the library owns, or 0
+// for a key that prints nothing.  Pass the key code with a scancode of
+// -1, or 0 with a real scancode.  It is for showing a key binding to
+// the user, and NOT for reading typed text.
+pub @ffi(library = "glfw", symbol = "glfwGetKeyName")
+fn glfw_get_key_name(key: Int, scancode: Int) -> Int [io, ffi]
+
+// Get whether a mouse button is down.
+//
+// `button` is 0 for the left button, 1 for the right and 2 for the
+// middle.  Answers 1 or 0, with the same sticky behaviour as
+// `glfwGetKey`.
+pub @ffi(library = "glfw", symbol = "glfwGetMouseButton")
+fn glfw_get_mouse_button(window: Int, button: Int) -> Int [io, ffi]
+
+// Get the cursor's position in a window's content area.
+//
+// `xpos` and `ypos` are addresses of slots receiving a C `double`
+// each, measured from the top left corner.  While the cursor is
+// grabbed the values are unbounded.
+pub @ffi(library = "glfw", symbol = "glfwGetCursorPos")
+fn glfw_get_cursor_pos(window: Int, xpos: Int, ypos: Int) [io, ffi]
+
+// Move the cursor within a window's content area.
+//
+// The two coordinates are C `double`s.  The window must have the input
+// focus, and a program that does this to a visible cursor is usually
+// doing the wrong thing.
+pub @ffi(library = "glfw", symbol = "glfwSetCursorPos")
+fn glfw_set_cursor_pos(window: Int, xpos: Float, ypos: Float) [io, ffi]
+
+// Create one of the system's standard cursor shapes.
+//
+// 0x00036001 is the arrow, 0x00036002 the text beam, 0x00036003 the
+// crosshair and 0x00036004 the hand.  Answers 0 when the platform has
+// no such shape.
+pub @ffi(library = "glfw", symbol = "glfwCreateStandardCursor")
+fn glfw_create_standard_cursor(shape: Int) -> Int [io, ffi]
+
+// Destroy a cursor.
+//
+// A cursor still set on a window is unset first.
+pub @ffi(library = "glfw", symbol = "glfwDestroyCursor")
+fn glfw_destroy_cursor(cursor: Int) [io, ffi]
+
+// Set the cursor shape a window shows.
+//
+// `cursor` 0 restores the arrow.
+pub @ffi(library = "glfw", symbol = "glfwSetCursor")
+fn glfw_set_cursor(window: Int, cursor: Int) [io, ffi]
+
+// Get the system clipboard's text.
+//
+// The answer is the address of a UTF-8 string the library owns, or 0
+// when the clipboard holds something that is not text.  It is valid
+// until the next clipboard call.
+pub @ffi(library = "glfw", symbol = "glfwGetClipboardString")
+fn glfw_get_clipboard_string(window: Int) -> Int [io, ffi]
+
+// Put text on the system clipboard.
+//
+// The string is UTF-8 and is copied.  `window` is ignored on the
+// current platforms and may be 0.
+pub @ffi(library = "glfw", symbol = "glfwSetClipboardString")
+fn glfw_set_clipboard_string(window: Int, string: Str) [io, ffi]
+
+// Get the seconds since the library started, as a C `double`.
+//
+// The clock is monotonic and has the highest resolution the platform
+// offers.
+pub @ffi(library = "glfw", symbol = "glfwGetTime")
+fn glfw_get_time() -> Float [io, ffi]
+
+// Set the seconds the clock reads.
+//
+// The value must be between 0 and about 584 years.
+pub @ffi(library = "glfw", symbol = "glfwSetTime")
+fn glfw_set_time(time: Float) [io, ffi]
+
+// Get the raw timer's current value.
+//
+// It counts in the units `glfwGetTimerFrequency` reports, and it is
+// the integer form of `glfwGetTime` for a program that does not want a
+// floating point clock.
+pub @ffi(library = "glfw", symbol = "glfwGetTimerValue")
+fn glfw_get_timer_value() -> Int [io, ffi]
+
+// Get how many raw timer units there are in a second.
+pub @ffi(library = "glfw", symbol = "glfwGetTimerFrequency")
+fn glfw_get_timer_frequency() -> Int [io, ffi]
+
+// Ask whether a Vulkan loader and at least one driver were found.
+//
+// Answers 1 when they were.  It says nothing about whether a device
+// can present to a window.
+pub @ffi(library = "glfw", symbol = "glfwVulkanSupported")
+fn glfw_vulkan_supported() -> Int [io, ffi]
+
+// Get the instance extensions a window surface needs on this platform.
+//
+// `count` is the address of a slot receiving how many there are.  The
+// answer is the address of an array of that many addresses of strings,
+// owned by the library, and those are the extension names to enable in
+// `VkInstanceCreateInfo`.  Answers 0 when Vulkan is not available.
+pub @ffi(library = "glfw", symbol = "glfwGetRequiredInstanceExtensions")
+fn glfw_get_required_instance_extensions(count: Int) -> Int [io, ffi]
+
+// Create a Vulkan surface for a window.
+//
+// `instance` is a `VkInstance`, `allocator` is 0 and `surface` is the
+// address of a slot receiving the `VkSurfaceKHR` handle.  Answers a
+// Vulkan result code, so 0 is success and a failure is NEGATIVE.  The
+// window must have been created with the client interface hint set to
+// 0.
+pub @ffi(library = "glfw", symbol = "glfwCreateWindowSurface")
+fn glfw_create_window_surface(instance: Int, window: Int, allocator: Int,
+                              surface: Int) -> Int [io, ffi]

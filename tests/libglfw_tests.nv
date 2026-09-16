@@ -1,0 +1,437 @@
+// API tests for the libglfw bindings.
+//
+// Every test below calls into the C library, so the suite needs GLFW
+// installed and linked.  `novo pkg build` type-checks the declarations
+// without it; `novo test` runs them and does not.
+//
+// GLFW needs a display server as well as a library.  Every test asks
+// `glfwInit` first and stops when it answers 0, so the suite passes on
+// a machine with no display as well as on one with a display.  The
+// windows it creates are created hidden, so nothing appears on screen.
+//
+// `glfw_wait_events` is NOT called anywhere below, and it is the one
+// entry point in this package that no test exercises: it blocks until
+// an event arrives, and on an idle machine with no user that is
+// forever.  `glfw_wait_events_timeout` is the form a test can call,
+// and it is called with a tenth of a second.
+//
+// The suite reads and writes no file and needs no privileges.
+
+use std.test
+use libglfw
+
+// `GLFW_VISIBLE`, the hint that decides whether a new window is shown.
+const HINT_VISIBLE: Int = 131076
+
+// `GLFW_RESIZABLE`.
+const HINT_RESIZABLE: Int = 131075
+
+// `GLFW_FOCUSED`.
+const ATTRIB_FOCUSED: Int = 131073
+
+// `GLFW_CLIENT_API`, and `GLFW_NO_API`, which is what a window with no
+// OpenGL context asks for.
+const HINT_CLIENT_API: Int = 139265
+const NO_API: Int = 0
+
+// `GLFW_X11_CLASS_NAME`, a hint whose value is a string.
+const HINT_X11_CLASS_NAME: Int = 143361
+
+// `GLFW_CURSOR`, and the three values it takes.
+const INPUT_MODE_CURSOR: Int = 208897
+const CURSOR_NORMAL: Int = 212993
+const CURSOR_HIDDEN: Int = 212994
+
+// `GLFW_STICKY_KEYS`.
+const INPUT_MODE_STICKY_KEYS: Int = 208898
+
+// `GLFW_KEY_ESCAPE` and `GLFW_KEY_A`.
+const KEY_ESCAPE: Int = 256
+const KEY_A: Int = 65
+
+// `GLFW_MOUSE_BUTTON_LEFT`.
+const MOUSE_BUTTON_LEFT: Int = 0
+
+// `GLFW_RELEASE`, which is what an unpressed key and button answer.
+const RELEASE: Int = 0
+
+// `GLFW_ARROW_CURSOR`.
+const CURSOR_SHAPE_ARROW: Int = 221185
+
+// `GLFW_NO_ERROR`.
+const NO_ERROR: Int = 0
+
+// The size of a `GLFWvidmode`: six C `int`s.
+const VIDMODE_SIZE: Int = 24
+
+// The size every window in this suite is created at.
+const WINDOW_WIDTH: Int = 320
+const WINDOW_HEIGHT: Int = 240
+
+// Read the low thirty-two bits of the word at `addr`, signed.
+fn i32_at(addr: Int) -> Int
+    return ptr.read_word(addr) as i32
+
+// Start the library and answer 1 when it started.  A machine with no
+// display answers 0, and every test then stops.
+fn started() -> Int [io, ffi]
+    return libglfw.glfw_init()
+
+// A hidden window with no OpenGL context, or 0.
+fn hidden_window() -> Int [io, ffi]
+    libglfw.glfw_default_window_hints()
+    libglfw.glfw_window_hint(HINT_VISIBLE, 0)
+    libglfw.glfw_window_hint(HINT_CLIENT_API, NO_API)
+    return libglfw.glfw_create_window(WINDOW_WIDTH, WINDOW_HEIGHT, "novo", 0, 0)
+
+@test
+fn test_the_library_reports_its_version_before_it_starts() [io, ffi]
+    test.case("glfwGetVersion, glfwGetVersionString")
+    // These two are the only calls that work before glfwInit.
+    let major = ptr.alloc_word()
+    let minor = ptr.alloc_word()
+    let rev = ptr.alloc_word()
+    libglfw.glfw_get_version(major, minor, rev)
+    // Every declaration in this package is GLFW 3.3 or later.
+    test.assert(i32_at(major) == 3)
+    test.assert(i32_at(minor) >= 3)
+    test.assert(i32_at(rev) >= 0)
+    test.assert(str.len(ptr.read_str(libglfw.glfw_get_version_string())) > 0)
+    ptr.free(rev)
+    ptr.free(minor)
+    ptr.free(major)
+
+@test
+fn test_the_library_starts_reports_its_errors_and_stops() [io, ffi]
+    test.case("glfwInitHint, glfwInit, glfwGetError, glfwTerminate")
+    // A hint that is not a hint is refused, and the refusal is an
+    // error a program can read.
+    libglfw.glfw_init_hint(999999, 1)
+    test.assert(libglfw.glfw_get_error(0) as i32 != NO_ERROR)
+    // And the queue is empty once it has been read.
+    test.assert(libglfw.glfw_get_error(0) as i32 == NO_ERROR)
+    if started() == 0
+        // A machine with no display says why.
+        let slot = ptr.alloc_word()
+        ptr.write_word(slot, 0)
+        test.assert(libglfw.glfw_get_error(slot) as i32 != NO_ERROR)
+        ptr.free(slot)
+        return
+    // Starting a second time is allowed and does nothing.
+    test.assert(libglfw.glfw_init() == 1)
+    test.assert(libglfw.glfw_get_error(0) as i32 == NO_ERROR)
+    libglfw.glfw_terminate()
+
+@test
+fn test_the_monitors_describe_themselves() [io, ffi]
+    test.case("glfwGetMonitors, glfwGetPrimaryMonitor, glfwGetMonitorPos, glfwGetMonitorWorkarea, glfwGetMonitorPhysicalSize, glfwGetMonitorContentScale, glfwGetMonitorName, glfwGetVideoMode, glfwGetVideoModes")
+    if started() == 0
+        return
+    let count = ptr.alloc_word()
+    ptr.write_i32(count, 0)
+    let monitors = libglfw.glfw_get_monitors(count)
+    let primary = libglfw.glfw_get_primary_monitor()
+    if primary == 0
+        // A machine with a display server and no monitor is possible.
+        test.assert(i32_at(count) == 0)
+        ptr.free(count)
+        libglfw.glfw_terminate()
+        return
+    test.assert(monitors != 0)
+    test.assert(i32_at(count) >= 1)
+    // The first handle in the array is a monitor.
+    test.assert(ptr.read_word(monitors) != 0)
+    let a = ptr.alloc_word()
+    let b = ptr.alloc_word()
+    let c = ptr.alloc_word()
+    let d = ptr.alloc_word()
+    libglfw.glfw_get_monitor_pos(primary, a, b)
+    libglfw.glfw_get_monitor_workarea(primary, a, b, c, d)
+    // The work area is never wider or taller than the video mode.
+    let mode = libglfw.glfw_get_video_mode(primary)
+    test.assert(mode != 0)
+    test.assert(i32_at(mode) > 0)
+    test.assert(i32_at(mode + 4) > 0)
+    test.assert(i32_at(c) <= i32_at(mode))
+    test.assert(i32_at(d) <= i32_at(mode + 4))
+    // The red, green and blue depths and the refresh rate.
+    test.assert(i32_at(mode + 8) > 0)
+    test.assert(i32_at(mode + 20) > 0)
+    libglfw.glfw_get_monitor_physical_size(primary, a, b)
+    test.assert(i32_at(a) >= 0)
+    // The content scale is two 32-bit floats, which the standard
+    // library can write and cannot read, so only that they were
+    // written is asserted.
+    ptr.write_word(a, 0)
+    libglfw.glfw_get_monitor_content_scale(primary, a, b)
+    test.assert(ptr.read_word(a) != 0)
+    test.assert(str.len(ptr.read_str(libglfw.glfw_get_monitor_name(primary))) > 0)
+    // The supported modes, each a 24-byte record.
+    ptr.write_i32(count, 0)
+    let modes = libglfw.glfw_get_video_modes(primary, count)
+    test.assert(i32_at(count) >= 1)
+    test.assert(i32_at(modes) > 0)
+    test.assert(i32_at(modes + VIDMODE_SIZE - 4) > 0)
+    ptr.free(d)
+    ptr.free(c)
+    ptr.free(b)
+    ptr.free(a)
+    ptr.free(count)
+    libglfw.glfw_terminate()
+
+@test
+fn test_a_window_is_created_hidden_and_asked_to_close() [io, ffi]
+    test.case("glfwDefaultWindowHints, glfwWindowHint, glfwWindowHintString, glfwCreateWindow, glfwWindowShouldClose, glfwSetWindowShouldClose, glfwDestroyWindow")
+    if started() == 0
+        return
+    libglfw.glfw_default_window_hints()
+    libglfw.glfw_window_hint_string(HINT_X11_CLASS_NAME, "novo-libglfw-sys")
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    // A new window has not been asked to close.
+    test.assert(libglfw.glfw_window_should_close(window) == 0)
+    libglfw.glfw_set_window_should_close(window, 1)
+    test.assert(libglfw.glfw_window_should_close(window) == 1)
+    // And a program may refuse the request again.
+    libglfw.glfw_set_window_should_close(window, 0)
+    test.assert(libglfw.glfw_window_should_close(window) == 0)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_a_window_reports_and_changes_its_geometry() [io, ffi]
+    test.case("glfwSetWindowTitle, glfwGetWindowPos, glfwSetWindowPos, glfwGetWindowSize, glfwSetWindowSize, glfwGetFramebufferSize, glfwGetWindowContentScale, glfwGetWindowAttrib, glfwSetWindowAttrib, glfwGetWindowMonitor, glfwSetWindowMonitor")
+    if started() == 0
+        return
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    libglfw.glfw_set_window_title(window, "novo libglfw-sys")
+    let x = ptr.alloc_word()
+    let y = ptr.alloc_word()
+    libglfw.glfw_get_window_size(window, x, y)
+    test.assert(i32_at(x) == WINDOW_WIDTH)
+    test.assert(i32_at(y) == WINDOW_HEIGHT)
+    libglfw.glfw_set_window_size(window, 400, 300)
+    libglfw.glfw_get_window_size(window, x, y)
+    test.assert(i32_at(x) == 400)
+    test.assert(i32_at(y) == 300)
+    // The framebuffer is the window's size times the content scale, so
+    // it is never smaller than the window.
+    libglfw.glfw_get_framebuffer_size(window, x, y)
+    test.assert(i32_at(x) >= 400)
+    libglfw.glfw_set_window_pos(window, 100, 100)
+    libglfw.glfw_get_window_pos(window, x, y)
+    test.assert(i32_at(x) >= 0)
+    ptr.write_word(x, 0)
+    libglfw.glfw_get_window_content_scale(window, x, y)
+    test.assert(ptr.read_word(x) != 0)
+    // A hidden window is not focused, and the attribute says so.
+    test.assert(libglfw.glfw_get_window_attrib(window, ATTRIB_FOCUSED) == 0)
+    // Resizability is one of the few attributes that may be changed
+    // after the window exists.
+    libglfw.glfw_set_window_attrib(window, HINT_RESIZABLE, 0)
+    test.assert(libglfw.glfw_get_window_attrib(window, HINT_RESIZABLE) == 0)
+    libglfw.glfw_set_window_attrib(window, HINT_RESIZABLE, 1)
+    test.assert(libglfw.glfw_get_window_attrib(window, HINT_RESIZABLE) == 1)
+    // A windowed window is on no monitor, and putting it back where it
+    // was is the call that would make it full screen.
+    test.assert(libglfw.glfw_get_window_monitor(window) == 0)
+    libglfw.glfw_set_window_monitor(window, 0, 100, 100, 400, 300, -1)
+    test.assert(libglfw.glfw_get_window_monitor(window) == 0)
+    ptr.free(y)
+    ptr.free(x)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_a_window_is_shown_hidden_minimised_and_restored() [io, ffi]
+    test.case("glfwShowWindow, glfwHideWindow, glfwIconifyWindow, glfwRestoreWindow, glfwMaximizeWindow, glfwFocusWindow")
+    if started() == 0
+        return
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    test.assert(libglfw.glfw_get_window_attrib(window, HINT_VISIBLE) == 0)
+    libglfw.glfw_show_window(window)
+    libglfw.glfw_poll_events()
+    libglfw.glfw_hide_window(window)
+    libglfw.glfw_poll_events()
+    test.assert(libglfw.glfw_get_window_attrib(window, HINT_VISIBLE) == 0)
+    // A window manager may refuse any of these four, so each is called
+    // and none of their effects is asserted.
+    libglfw.glfw_iconify_window(window)
+    libglfw.glfw_restore_window(window)
+    libglfw.glfw_maximize_window(window)
+    libglfw.glfw_focus_window(window)
+    libglfw.glfw_poll_events()
+    test.assert(libglfw.glfw_get_error(0) as i32 >= 0)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_the_event_pump_runs_and_the_input_is_polled() [io, ffi]
+    test.case("glfwPollEvents, glfwWaitEventsTimeout, glfwPostEmptyEvent, glfwGetKey, glfwGetKeyName, glfwGetMouseButton, glfwGetCursorPos, glfwSetCursorPos, glfwGetInputMode, glfwSetInputMode, glfwRawMouseMotionSupported")
+    if started() == 0
+        return
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    // The polling half of the event interface, which is the half this
+    // package has.  `glfw_wait_events` is the blocking form and is not
+    // called here.
+    libglfw.glfw_poll_events()
+    libglfw.glfw_post_empty_event()
+    libglfw.glfw_wait_events_timeout(0.1)
+    // Nothing is pressed on a hidden window with no user.
+    test.assert(libglfw.glfw_get_key(window, KEY_ESCAPE) as i32 == RELEASE)
+    test.assert(libglfw.glfw_get_mouse_button(window, MOUSE_BUTTON_LEFT) as i32 == RELEASE)
+    // A key code GLFW does not know answers -1, which is why an answer
+    // is read with `as i32`.
+    test.assert(libglfw.glfw_get_key(window, 9999) as i32 == -1)
+    // The printed name of a key, for showing a binding to the user.
+    test.assert(libglfw.glfw_get_key_name(KEY_A, -1) != 0)
+    // Escape prints nothing, so it has no name.
+    test.assert(libglfw.glfw_get_key_name(KEY_ESCAPE, -1) == 0)
+    let x = ptr.alloc_word()
+    let y = ptr.alloc_word()
+    libglfw.glfw_set_cursor_pos(window, 10.0, 20.0)
+    libglfw.glfw_get_cursor_pos(window, x, y)
+    // The two slots hold C doubles, which the standard library reads
+    // as raw bits; that they were written is what is asserted.
+    test.assert(ptr.read_word(x) != 0)
+    test.assert(ptr.read_word(y) != 0)
+    // The cursor mode round-trips.
+    test.assert(libglfw.glfw_get_input_mode(window, INPUT_MODE_CURSOR) == CURSOR_NORMAL)
+    libglfw.glfw_set_input_mode(window, INPUT_MODE_CURSOR, CURSOR_HIDDEN)
+    test.assert(libglfw.glfw_get_input_mode(window, INPUT_MODE_CURSOR) == CURSOR_HIDDEN)
+    libglfw.glfw_set_input_mode(window, INPUT_MODE_STICKY_KEYS, 1)
+    test.assert(libglfw.glfw_get_input_mode(window, INPUT_MODE_STICKY_KEYS) == 1)
+    // Whether raw motion exists is a fact about the machine, so both
+    // answers are accepted.
+    test.assert(libglfw.glfw_raw_mouse_motion_supported() <= 1)
+    ptr.free(y)
+    ptr.free(x)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_a_cursor_shape_is_created_set_and_destroyed() [io, ffi]
+    test.case("glfwCreateStandardCursor, glfwSetCursor, glfwDestroyCursor")
+    if started() == 0
+        return
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    let cursor = libglfw.glfw_create_standard_cursor(CURSOR_SHAPE_ARROW)
+    if cursor != 0
+        libglfw.glfw_set_cursor(window, cursor)
+        // 0 puts the arrow back.
+        libglfw.glfw_set_cursor(window, 0)
+        libglfw.glfw_destroy_cursor(cursor)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_the_clipboard_takes_text_and_gives_it_back() [io, ffi]
+    test.case("glfwSetClipboardString, glfwGetClipboardString")
+    if started() == 0
+        return
+    let window = hidden_window()
+    if window == 0
+        libglfw.glfw_terminate()
+        return
+    libglfw.glfw_set_clipboard_string(window, "novo")
+    let text = libglfw.glfw_get_clipboard_string(window)
+    // A machine with no clipboard owner answers 0, which is not a
+    // failure of the binding.
+    if text != 0
+        test.assert(ptr.read_str(text) == "novo")
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_the_clock_runs_forward_and_can_be_set() [io, ffi]
+    test.case("glfwGetTime, glfwSetTime, glfwGetTimerValue, glfwGetTimerFrequency")
+    if started() == 0
+        return
+    // The clock starts at zero when the library starts.
+    test.assert(libglfw.glfw_get_time() >= 0.0)
+    libglfw.glfw_set_time(100.0)
+    test.assert(libglfw.glfw_get_time() >= 100.0)
+    // The raw timer is the same clock in integer units.
+    let frequency = libglfw.glfw_get_timer_frequency()
+    test.assert(frequency > 0)
+    let first = libglfw.glfw_get_timer_value()
+    libglfw.glfw_wait_events_timeout(0.01)
+    test.assert(libglfw.glfw_get_timer_value() >= first)
+    libglfw.glfw_terminate()
+
+@test
+fn test_an_opengl_context_is_made_current_and_swapped() [io, ffi]
+    test.case("glfwMakeContextCurrent, glfwGetCurrentContext, glfwSwapInterval, glfwSwapBuffers, glfwGetProcAddress, glfwExtensionSupported")
+    if started() == 0
+        return
+    // This window asks for the default OpenGL context rather than for
+    // none, because the four calls below need one.
+    libglfw.glfw_default_window_hints()
+    libglfw.glfw_window_hint(HINT_VISIBLE, 0)
+    let window = libglfw.glfw_create_window(WINDOW_WIDTH, WINDOW_HEIGHT, "novo", 0, 0)
+    if window == 0
+        // A machine with no OpenGL driver cannot make this window.
+        libglfw.glfw_terminate()
+        return
+    test.assert(libglfw.glfw_get_current_context() == 0)
+    libglfw.glfw_make_context_current(window)
+    test.assert(libglfw.glfw_get_current_context() == window)
+    libglfw.glfw_swap_interval(1)
+    libglfw.glfw_swap_buffers(window)
+    // The address is one a novo-lang program cannot call, so what is
+    // asserted is only that the loader has the function.
+    test.assert(libglfw.glfw_get_proc_address("glClear") != 0)
+    test.assert(libglfw.glfw_get_proc_address("glNoSuchFunction") == 0)
+    test.assert(libglfw.glfw_extension_supported("GL_NO_SUCH_EXTENSION") == 0)
+    libglfw.glfw_make_context_current(0)
+    libglfw.glfw_destroy_window(window)
+    libglfw.glfw_terminate()
+
+@test
+fn test_the_vulkan_surface_calls_report_what_the_machine_has() [io, ffi]
+    test.case("glfwVulkanSupported, glfwGetRequiredInstanceExtensions, glfwCreateWindowSurface")
+    if started() == 0
+        return
+    if libglfw.glfw_vulkan_supported() == 0
+        // A machine with no Vulkan loader answers 0, and the extension
+        // list is then empty.
+        let count = ptr.alloc_word()
+        ptr.write_i32(count, 0)
+        test.assert(libglfw.glfw_get_required_instance_extensions(count) == 0)
+        ptr.free(count)
+        libglfw.glfw_terminate()
+        return
+    let count = ptr.alloc_word()
+    ptr.write_i32(count, 0)
+    let extensions = libglfw.glfw_get_required_instance_extensions(count)
+    test.assert(extensions != 0)
+    // Two on every platform: the generic surface extension and the
+    // platform's own.
+    test.assert(i32_at(count) >= 2)
+    test.assert(ptr.read_str(ptr.read_word(extensions)) == "VK_KHR_surface")
+    // Creating a surface needs a VkInstance, which this package cannot
+    // make; with a null instance the call answers a negative Vulkan
+    // result rather than succeeding.
+    let window = hidden_window()
+    if window != 0
+        let surface = ptr.alloc_word()
+        ptr.write_word(surface, 0)
+        test.assert(libglfw.glfw_create_window_surface(0, window, 0, surface) as i32 != 0)
+        ptr.free(surface)
+        libglfw.glfw_destroy_window(window)
+    ptr.free(count)
+    libglfw.glfw_terminate()
