@@ -8,19 +8,17 @@ most small graphics programs use instead of talking to X11, Wayland,
 Win32 or Cocoa themselves. This package declares sixty-nine of that
 library's entry points to novo-lang, one declaration each.
 
-**Status: a binding, not a port.** Every function in this package is a
-declaration of a function in GLFW. The package contains no logic of its
-own, and it does nothing without the C library installed.
+Every function here is a declaration of a function in GLFW. The package
+contains no logic of its own, and it does nothing without the C library
+installed. The sixty-nine entry points are the polling half of GLFW.
+The section "What is not included" says what the other half was, and
+what a program loses with it.
 
-**Unverified.** GLFW was not installed on the machine this package was
-written on, so the test suite has never been linked and no declaration
-has ever been called. The declarations were checked against the GLFW
-3.3 reference manual. Treat the whole package as unmeasured until
-someone runs it on a machine with GLFW and a display.
-
-The sixty-nine entry points are the polling half of GLFW. The section
-"What is not included" says what the other half was, and what a program
-loses with it.
+GLFW was not installed on the machine this package was written on, so
+the test suite has never been linked and no declaration has ever been
+called. The declarations were checked against the GLFW 3.3 reference
+manual and the GLFW 3.3.10 header. Treat the whole package as
+unmeasured until someone runs it on a machine with GLFW and a display.
 
 ## What it is
 
@@ -33,17 +31,17 @@ a resolution, a colour depth and a refresh rate that monitor supports.
 
 **Screen coordinates** are what the window manager measures in.
 **Pixels** are what the drawing surface is made of. On a display whose
-**content scale** is not one — a high-resolution laptop screen, say —
-a window 400 screen coordinates wide has a framebuffer 800 pixels wide,
-and a program that confuses the two draws at a quarter of the screen or
-at four times it.
+**content scale** is not one, such as a high-resolution laptop screen,
+a window 400 screen coordinates wide has a framebuffer 800 pixels wide.
+A program that confuses the two draws at a quarter of the screen or at
+four times it.
 
 An **event** is something the user or the window manager did. GLFW
 collects events as they arrive and does nothing with them until the
 program asks. `glfwPollEvents` is that ask.
 
 A **hint** is a setting that applies to the next window created rather
-than to a window that exists. Hints are library state: they survive
+than to a window that exists. Hints are library state. They survive
 window creation, and a program that sets one sets it for every later
 window until it resets them.
 
@@ -81,7 +79,8 @@ fn main() [io, ffi]
         println("GLFW did not start")
         return
 
-    // No OpenGL context: this window is for Vulkan, or for nothing.
+    // 139265 is GLFW_CLIENT_API and 0 is GLFW_NO_API: this window is
+    // for Vulkan, or for nothing.
     libglfw.glfw_window_hint(139265, 0)
     let window = libglfw.glfw_create_window(640, 480, "novo", 0, 0)
     if window == 0
@@ -99,10 +98,10 @@ fn main() [io, ffi]
     libglfw.glfw_terminate()
 ```
 
-The example is fenced as an illustration rather than a compiled block
-because `novo doc` compiles the blocks in documentation comments and not
-the ones in this file. The same calls are in `tests/libglfw_tests.nv`,
-where the windows are created hidden.
+The block is fenced `novo ignore`. A compiled block is linked against
+GLFW, and the documentation has to build on a machine that does not
+have the library. The same calls are in `tests/libglfw_tests.nv`, where
+the windows are created hidden.
 
 ## What the package contains
 
@@ -125,11 +124,11 @@ The eight groups and their sizes:
 
 ## How to choose an entry point
 
-`glfwPollEvents` is for a program that draws every frame: it takes
+`glfwPollEvents` is for a program that draws every frame. It takes
 whatever has arrived and returns at once. `glfwWaitEvents` is for a
-program that draws only when something changed: it uses no processor
-while it waits. `glfwWaitEventsTimeout` is the same wait with an upper
-bound, and it is the one a test can call.
+program that draws only when something changed, and it uses no
+processor while it waits. `glfwWaitEventsTimeout` is the same wait with
+an upper bound, and it is the one a test can call.
 
 `glfwGetWindowSize` answers screen coordinates and
 `glfwGetFramebufferSize` answers pixels. Give the framebuffer size to
@@ -137,8 +136,8 @@ bound, and it is the one a test can call.
 the user positions.
 
 `glfwGetKey` answers whether a key is down now. It is not how a program
-reads typed text, and there is no entry point in this package that is;
-see "What is not included".
+reads typed text, and there is no entry point in this package that is.
+See "What is not included".
 
 `glfwGetKeyName` answers what a key prints on the user's layout. Use it
 to show a key binding, never to read input.
@@ -156,25 +155,29 @@ to show a key binding, never to read input.
    answers a pair of numbers that way rather than by returning a
    structure. A slot holding a C `int` is written with
    `ptr.write_i32` and read with `ptr.read_word(a) as i32`.
-4. **An answer can be negative, so read it with `as i32`.**
-   `glfwGetKey` answers -1 for a key code it does not know, and
+4. **A Vulkan result can be negative, so read it with `as i32`.**
    `glfwCreateWindowSurface` answers a Vulkan result code, whose
-   failures are negative.
-5. **An error is taken off a queue, not returned.** `glfwGetError`
-   answers the last error and clears it, and answers 0 when there was
-   none. Pass 0 for the description, or the address of a slot that
-   receives the address of a string valid only until the next error.
+   failures are negative. GLFW's own booleans, key codes, button codes
+   and error codes are all zero or positive.
+5. **An error is read once and then gone.** `glfwGetError` answers the
+   last error on the calling thread and clears it, and answers 0 when
+   there was none. Pass 0 for the description, or the address of a slot
+   that receives the address of a string valid only until the next
+   error.
 
    | Code | Name | What it means |
    | --- | --- | --- |
    | 0x00000000 | `GLFW_NO_ERROR` | nothing went wrong |
    | 0x00010001 | `GLFW_NOT_INITIALIZED` | a call was made outside `glfwInit` and `glfwTerminate` |
    | 0x00010002 | `GLFW_NO_CURRENT_CONTEXT` | a context call was made with no context current |
-   | 0x00010003 | `GLFW_INVALID_ENUM` | a hint, mode or attribute is not one GLFW has |
+   | 0x00010003 | `GLFW_INVALID_ENUM` | a hint, mode, attribute or key code is not one GLFW has |
    | 0x00010004 | `GLFW_INVALID_VALUE` | the value is out of range |
    | 0x00010005 | `GLFW_OUT_OF_MEMORY` | an allocation failed |
-   | 0x00010006 | `GLFW_API_UNAVAILABLE` | the machine has no driver for the client interface asked for |
-   | 0x00010008 | `GLFW_FORMAT_UNAVAILABLE` | the clipboard holds something that is not text |
+   | 0x00010006 | `GLFW_API_UNAVAILABLE` | the machine has no driver for the client API asked for |
+   | 0x00010007 | `GLFW_VERSION_UNAVAILABLE` | the OpenGL version asked for is not available |
+   | 0x00010008 | `GLFW_PLATFORM_ERROR` | the window system reported an error of its own |
+   | 0x00010009 | `GLFW_FORMAT_UNAVAILABLE` | the clipboard holds something that is not text |
+   | 0x0001000A | `GLFW_NO_WINDOW_CONTEXT` | the window has no OpenGL context |
 
 6. **Hints are library state.** They apply to the next window and
    survive its creation. `glfwDefaultWindowHints` puts them all back.
@@ -184,7 +187,7 @@ to show a key binding, never to read input.
    | `GLFW_RESIZABLE` | 0x00020003 | whether the user may resize the window |
    | `GLFW_VISIBLE` | 0x00020004 | whether the window appears when it is created |
    | `GLFW_DECORATED` | 0x00020005 | whether the window manager draws a frame |
-   | `GLFW_CLIENT_API` | 0x00021001 | 0x00030001 for OpenGL, 0 for none |
+   | `GLFW_CLIENT_API` | 0x00022001 | 0x00030001 for OpenGL, 0 for none |
    | `GLFW_CONTEXT_VERSION_MAJOR` | 0x00022002 | the OpenGL version asked for |
    | `GLFW_CONTEXT_VERSION_MINOR` | 0x00022003 | the same |
 
@@ -207,13 +210,14 @@ to show a key binding, never to read input.
 10. **A time is a C `double` and is expressible.** `glfwGetTime`,
     `glfwSetTime`, `glfwWaitEventsTimeout`, `glfwGetCursorPos` and
     `glfwSetCursorPos` all carry doubles, which the foreign function
-    interface passes. A C `float` is a different type and is not; see
+    interface passes. A C `float` is a different type and is not. See
     "What is not included".
 11. **The key codes are the printable character where there is one.**
-    32 is space, 65 to 90 are A to Z and 48 to 57 are 0 to 9; 256 is
+    32 is space, 65 to 90 are A to Z and 48 to 57 are 0 to 9. 256 is
     Escape, 257 Enter, 258 Tab, 259 Backspace, and 262 to 265 are
     right, left, down and up. A key answers 1 while it is down and 0
-    while it is not.
+    while it is not. A key code below 32 or above 348 is refused with
+    `GLFW_INVALID_ENUM`, and the answer is then 0.
 12. **The mouse buttons are 0, 1 and 2**, for left, right and middle.
 13. **Sticky input keeps a press until it is read.** Input mode
     0x00033002 for keys and 0x00033003 for buttons makes a press that
@@ -230,9 +234,16 @@ to show a key binding, never to read input.
 16. **`glfwGetProcAddress` answers an address this package cannot
     call.** Use it to ask whether the current context has an OpenGL
     function, and for nothing else.
-17. **Every window call must be made on the thread that called
-    `glfwInit`.** GLFW's event handling is single-threaded, and
-    `glfwPostEmptyEvent` is the only call another thread may make.
+17. **Most calls must be made on the main thread, the one that called
+    `glfwInit`.** Window creation, window state, the monitors and the
+    event processing are all main-thread calls. These may be made from
+    any thread: `glfwGetError`, `glfwPostEmptyEvent`,
+    `glfwWindowShouldClose`, `glfwSetWindowShouldClose`,
+    `glfwMakeContextCurrent`, `glfwGetCurrentContext`,
+    `glfwSwapBuffers`, `glfwSwapInterval`, `glfwGetProcAddress`,
+    `glfwExtensionSupported`, the four clock calls, the two version
+    calls, `glfwVulkanSupported`,
+    `glfwGetRequiredInstanceExtensions` and `glfwCreateWindowSurface`.
 
 ## What is not included
 
@@ -255,20 +266,21 @@ to show a key binding, never to read input.
 - **`glfwSetWindowOpacity`, `glfwGetWindowOpacity` and
   `glfwSetGamma`.** Their argument or return type is a C `float`, and
   an `@ffi` declaration's one floating point type is a C `double`.
-- **The joystick and gamepad interface.** `glfwGetJoystickAxes` and
+- **The joystick and gamepad calls.** `glfwGetJoystickAxes` and
   `glfwGetGamepadState` answer arrays of 32-bit floats, and the
   standard library has no call that reads one out of memory.
 - **`glfwSetWindowIcon` and `glfwCreateCursor`.** Both take an array of
-  `GLFWimage` records. They are left out of the first release.
-- **`glfwGetGammaRamp` and `glfwSetGammaRamp`.** A gamma ramp is three
-  arrays of 16-bit values behind pointers. Left out of the first
-  release.
+  `GLFWimage` records, each a width, a height and the address of pixel
+  data the caller lays out by hand.
+- **`glfwGetGammaRamp` and `glfwSetGammaRamp`.** A `GLFWgammaramp` is
+  three arrays of 16-bit values behind pointers, which a caller lays
+  out by hand in the same way.
 - **`glfwSetWindowUserPointer` and `glfwGetWindowUserPointer`.** They
   exist to carry a program's own pointer into a callback.
 - **`glfwGetPlatform` and `glfwPlatformSupported`.** They are GLFW 3.4.
   Every declaration in this package is one a GLFW 3.3 library exports
   as well, so a 3.3 installation links.
-- **The native access interface.** `glfwGetX11Display`,
+- **The native access header `glfw3native.h`.** `glfwGetX11Display`,
   `glfwGetWaylandWindow` and their neighbours exist only on their own
   platform, and a binding that declared them would fail to link on
   every other one.
@@ -276,8 +288,8 @@ to show a key binding, never to read input.
 ## Related packages
 
 There is no GLFW port in novo-lang and there will not be one. A window
-is not a format or an algorithm; it is what the operating system gives
-a program, and the only implementation is the platform's own.
+is what the operating system gives a program, not a format or an
+algorithm, and the only implementation is the platform's own.
 
 `libvulkan-sys` binds the Vulkan loader. This package's
 `glfwGetRequiredInstanceExtensions` answers the extension names that
@@ -287,9 +299,9 @@ swapchain presents to.
 
 ## Tests
 
-`tests/libglfw_tests.nv` holds twelve tests written against the
-signatures. They call the C library, so `novo test` needs GLFW
-installed and linkable:
+`tests/libglfw_tests.nv` holds twelve tests over sixty-eight of the
+sixty-nine entry points. They call the C library, so `novo test` needs GLFW installed
+and linkable:
 
 ```
 novo test tests/libglfw_tests.nv
@@ -299,10 +311,10 @@ novo test tests/libglfw_tests.nv
 installed.
 
 GLFW was not installed on the machine this package was written on, so
-**the suite has never been linked and has never been run**. Without the
-library the link fails, naming `-lglfw`. Every assertion below is
-therefore a claim about what GLFW's documentation says, and not an
-observation.
+the suite has never been linked and has never been run. Without the
+library the link fails, naming `-lglfw`. Every assertion in the suite
+is therefore a claim about what GLFW's documentation and header say,
+and not an observation.
 
 The suite needs a display as well as a library. Every test asks
 `glfwInit` first and stops when it answers 0, so it is written to pass
@@ -312,25 +324,8 @@ and needs no privileges.
 
 `glfw_wait_events` is the one entry point no test calls. It blocks
 until an event arrives, and on an idle machine with no user that is
-forever; `glfw_wait_events_timeout` is the form a test can call, and it
+forever. `glfw_wait_events_timeout` is the form a test can call, and it
 is called with a tenth of a second.
-
-## Implementation status
-
-| Group | State |
-| --- | --- |
-| The library | Complete. Unverified. |
-| The monitors | Complete except for the gamma ramp. Unverified. |
-| The window's creation | Complete except for the window icon. Unverified. |
-| The window's state | Complete except for the opacity, which is a C `float`. Unverified. |
-| Events | Complete for the polling model. Unverified. |
-| Polled input | Complete except for the custom cursor image. Unverified. |
-| The clock | Complete. Unverified. |
-| Context and Vulkan | Complete. Unverified. |
-| The callbacks | Absent. Every one is a C function pointer. |
-| Typed text, scrolling and dropped files | Absent. They have no polled form. |
-| Joysticks and gamepads | Absent. They answer arrays of 32-bit floats. |
-| The native access interface | Absent. Each call exists on one platform only. |
 
 ## Licence
 

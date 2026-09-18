@@ -12,32 +12,32 @@
 // back.  A slot GLFW writes a C `int` into holds it in its low four
 // bytes.
 //
-// GLFW REPORTS EVERY EVENT THROUGH A C FUNCTION POINTER, and a
-// novo-lang program cannot produce one, so not one `glfwSet*Callback`
-// entry point is here.  What is left is the polling half of the same
-// interface: `glfwPollEvents` drains the queue, and `glfwGetKey`,
-// `glfwGetMouseButton`, `glfwGetCursorPos` and `glfwWindowShouldClose`
-// are asked afterwards what it did.  A game loop written that way
-// works.  Typed text, the scroll wheel, dropped files and the
-// per-window resize notification have NO polled form, and they are
-// therefore out of reach rather than merely out of this release.  The
-// README's "What is not included" section names them one by one.
+// GLFW reports every event through a C function pointer, and a
+// novo-lang program cannot produce one.  No `glfwSet*Callback` entry
+// point is therefore declared here.  What is left is the polling half
+// of the same C API.  `glfwPollEvents` drains the queue, and
+// `glfwGetKey`, `glfwGetMouseButton`, `glfwGetCursorPos` and
+// `glfwWindowShouldClose` are asked afterwards what it did.  A game
+// loop written that way works.  Typed text, the scroll wheel, dropped
+// files and the per-window resize notification have no polled form.
+// They are out of reach rather than merely out of this release, and
+// the README's "What is not included" section names them one by one.
 //
 // A C `float` is out of reach as well.  An `@ffi` declaration has one
 // floating point type, `Float`, and it is a C `double`, so
 // `glfwSetWindowOpacity`, `glfwGetWindowOpacity` and `glfwSetGamma`
 // cannot be declared.  A `double` is fine, which is why the time and
-// the cursor position are here.  A `float` BEHIND A POINTER is half
-// fine: `glfwGetMonitorContentScale` and `glfwGetWindowContentScale`
+// the cursor position are here.  A `float` behind a pointer is half
+// fine.  `glfwGetMonitorContentScale` and `glfwGetWindowContentScale`
 // write two of them into slots the caller owns, and the standard
-// library can write a 32-bit float with `ptr.write_f32` but has no
-// call that reads one back.
+// library writes a 32-bit float with `ptr.write_f32` but has no call
+// that reads one back.
 //
 // A C `int` return arrives in 32 bits.  GLFW's booleans are 1 and 0
-// and its key and button codes are positive, but `glfwGetError`
-// answers codes such as 0x00010001 and `glfwGetKey` answers -1 for an
-// unknown key, so bind an answer to a local with `as i32` before
-// comparing it with a negative number.
+// and its key, button and error codes are positive, but
+// `glfwCreateWindowSurface` answers a Vulkan result code whose
+// failures are negative.  Bind that answer to a local with `as i32`
+// before comparing it with a negative number.
 //
 // Almost every entry point carries `[io, ffi]`: GLFW talks to a
 // display server, a window manager and an input device.  The two that
@@ -62,9 +62,12 @@ fn glfw_get_version_string() -> Int [ffi]
 
 // Set a hint that applies to the next initialisation.
 //
-// The hint must be set before `glfwInit`.  Hint 0x00050001 is whether
-// the joystick hat buttons are exposed and 0x00051001 is whether macOS
-// looks for a bundled menu; `value` is 1 or 0.
+// The hint must be set before `glfwInit`.  Hint 0x00050001 is
+// `GLFW_JOYSTICK_HAT_BUTTONS`, whether a joystick's hats are reported
+// as buttons as well.  Hint 0x00051001 is `GLFW_COCOA_CHDIR_RESOURCES`,
+// whether macOS changes the working directory to the bundle's
+// `Resources` directory.  Hint 0x00051002 is `GLFW_COCOA_MENUBAR`,
+// whether macOS creates the menu bar.  `value` is 1 or 0.
 pub @ffi(library = "glfw", symbol = "glfwInitHint")
 fn glfw_init_hint(hint: Int, value: Int) [io, ffi]
 
@@ -84,14 +87,14 @@ fn glfw_init() -> Int [io, ffi]
 pub @ffi(library = "glfw", symbol = "glfwTerminate")
 fn glfw_terminate() [io, ffi]
 
-// Take the last error off the queue.
+// Get the last error on the calling thread, and clear it.
 //
-// `description` is the address of a slot receiving the address of a
-// string the library owns, or 0 for no description; pass 0 to ignore
-// it.  Answers 0x00000000 when there was no error, and a code such as
-// 0x00010001, `GLFW_NOT_INITIALIZED`, or 0x00010008,
-// `GLFW_FORMAT_UNAVAILABLE`, when there was.  The string is only valid
-// until the next error.
+// GLFW keeps one error per thread, the most recent.  `description` is
+// the address of a slot receiving the address of a string the library
+// owns; pass 0 to ignore it.  Answers 0, `GLFW_NO_ERROR`, when there
+// was no error.  Answers a code such as 0x00010001,
+// `GLFW_NOT_INITIALIZED`, or 0x00010009, `GLFW_FORMAT_UNAVAILABLE`,
+// when there was.  The string is valid only until the next error.
 pub @ffi(library = "glfw", symbol = "glfwGetError")
 fn glfw_get_error(description: Int) -> Int [io, ffi]
 
@@ -136,7 +139,7 @@ fn glfw_get_monitor_physical_size(monitor: Int, width_mm: Int, height_mm: Int) [
 // Get a monitor's content scale.
 //
 // `xscale` and `yscale` are addresses of slots receiving a 32-bit
-// FLOAT each, which is the ratio of the monitor's dots per inch to the
+// float each, the ratio of the monitor's dots per inch to the
 // platform's own.  The standard library has no call that reads a
 // 32-bit float back out of memory, so the two values are reachable
 // only as their raw bits.
@@ -162,7 +165,7 @@ fn glfw_get_video_mode(monitor: Int) -> Int [io, ffi]
 //
 // `count` is the address of a slot receiving how many there are.  The
 // answer is the address of an array of 24-byte records, sorted by bit
-// depth and then by resolution and then by refresh rate.
+// depth, then by resolution, then by refresh rate.
 pub @ffi(library = "glfw", symbol = "glfwGetVideoModes")
 fn glfw_get_video_modes(monitor: Int, count: Int) -> Int [io, ffi]
 
@@ -175,18 +178,20 @@ fn glfw_default_window_hints() [io, ffi]
 
 // Set a hint that applies to the next window created.
 //
-// 0x00020003 is whether the window is resizable, 0x00020004 whether it
-// is visible, 0x00021001 the client interface — 0x00030001 for OpenGL
-// and 0 for none, which is what a Vulkan program asks for — and
-// 0x00022002 and 0x00022003 the OpenGL version.  `value` is a number
-// or -1 for "do not care".
+// 0x00020003 is `GLFW_RESIZABLE` and 0x00020004 is `GLFW_VISIBLE`.
+// 0x00022001 is `GLFW_CLIENT_API`, which takes 0x00030001 for OpenGL
+// and 0 for none, the value a Vulkan program asks for.  0x00022002 and
+// 0x00022003 are the OpenGL version asked for.  `value` is a number,
+// or -1 for `GLFW_DONT_CARE`.
 pub @ffi(library = "glfw", symbol = "glfwWindowHint")
 fn glfw_window_hint(hint: Int, value: Int) [io, ffi]
 
 // Set a hint whose value is a string.
 //
-// 0x00023001 and 0x00023002 are the X11 class and instance names, and
-// 0x00025002 is the Wayland application identifier.
+// GLFW 3.3 has three such hints.  0x00023002 is
+// `GLFW_COCOA_FRAME_NAME`, and 0x00024001 and 0x00024002 are
+// `GLFW_X11_CLASS_NAME` and `GLFW_X11_INSTANCE_NAME`.  The string is
+// UTF-8 and is copied.
 pub @ffi(library = "glfw", symbol = "glfwWindowHintString")
 fn glfw_window_hint_string(hint: Int, value: Str) [io, ffi]
 
@@ -244,9 +249,9 @@ fn glfw_set_window_pos(window: Int, xpos: Int, ypos: Int) [io, ffi]
 
 // Get a window's size, in screen coordinates.
 //
-// This is the size of the content area.  It is NOT the size of the
-// framebuffer on a display whose content scale is not one:
-// `glfwGetFramebufferSize` answers that.
+// This is the size of the content area.  On a display whose content
+// scale is not one it is not the size of the framebuffer, which
+// `glfwGetFramebufferSize` answers.
 pub @ffi(library = "glfw", symbol = "glfwGetWindowSize")
 fn glfw_get_window_size(window: Int, width: Int, height: Int) [io, ffi]
 
@@ -266,7 +271,7 @@ fn glfw_get_framebuffer_size(window: Int, width: Int, height: Int) [io, ffi]
 
 // Get a window's content scale.
 //
-// The two slots receive a 32-bit FLOAT each, with the same limitation
+// The two slots receive a 32-bit float each, with the same limitation
 // as `glfwGetMonitorContentScale`.
 pub @ffi(library = "glfw", symbol = "glfwGetWindowContentScale")
 fn glfw_get_window_content_scale(window: Int, xscale: Int, yscale: Int) [io, ffi]
@@ -333,7 +338,7 @@ fn glfw_get_window_monitor(window: Int) -> Int [io, ffi]
 //
 // `monitor` 0 makes the window windowed at the given position and
 // size, and a monitor handle makes it full screen with the given size
-// and refresh rate.  `refresh_rate` may be -1 for "do not care".
+// and refresh rate.  `refresh_rate` may be -1, `GLFW_DONT_CARE`.
 pub @ffi(library = "glfw", symbol = "glfwSetWindowMonitor")
 fn glfw_set_window_monitor(window: Int, monitor: Int, xpos: Int, ypos: Int, width: Int, height: Int,
                            refresh_rate: Int) [io, ffi]
@@ -396,9 +401,9 @@ fn glfw_swap_interval(interval: Int) [io, ffi]
 
 // Get the address of an OpenGL function.
 //
-// Answers 0 when the current context does not have it.  The address is
-// one a novo-lang program CANNOT CALL, so this entry point is here to
-// test whether a function exists and not to reach it.
+// Answers 0 when the current context does not have it.  A novo-lang
+// program cannot call the address, so this entry point serves to test
+// whether a function exists and not to reach it.
 pub @ffi(library = "glfw", symbol = "glfwGetProcAddress")
 fn glfw_get_proc_address(procname: Str) -> Int [io, ffi]
 
@@ -408,7 +413,7 @@ fn glfw_get_proc_address(procname: Str) -> Int [io, ffi]
 pub @ffi(library = "glfw", symbol = "glfwExtensionSupported")
 fn glfw_extension_supported(extension: Str) -> Int [io, ffi]
 
-// Get or set how a window treats an input device.
+// Get how a window treats an input device.
 //
 // Mode 0x00033001 is the cursor: 0x00034001 shows it, 0x00034002 hides
 // it inside the window and 0x00034003 grabs it for a first-person
@@ -426,7 +431,7 @@ fn glfw_set_input_mode(window: Int, mode: Int, value: Int) [io, ffi]
 // Ask whether raw mouse motion is available on this machine.
 //
 // Answers 1 when it is.  Raw motion is unscaled and unaccelerated, and
-// it is what a camera wants; it works only while the cursor is
+// it is what a camera wants.  It works only while the cursor is
 // grabbed.
 pub @ffi(library = "glfw", symbol = "glfwRawMouseMotionSupported")
 fn glfw_raw_mouse_motion_supported() -> Int [io, ffi]
@@ -435,18 +440,20 @@ fn glfw_raw_mouse_motion_supported() -> Int [io, ffi]
 //
 // `key` is a key code: 32 is space, 256 escape, 257 enter, 262 to 265
 // the arrows and 65 to 90 the letters A to Z.  Answers 1 while the key
-// is down and 0 otherwise, or -1 when the key code is not one GLFW
-// knows.  With sticky keys on, a press that has not been read yet
-// answers 1 even if the key is already up again.
+// is down and 0 otherwise.  A key code below 32 or above 348 is
+// refused with `GLFW_INVALID_ENUM`, and the answer is then 0.  With
+// sticky keys on, a press that has not been read yet answers 1 even if
+// the key is already up again.
 pub @ffi(library = "glfw", symbol = "glfwGetKey")
 fn glfw_get_key(window: Int, key: Int) -> Int [io, ffi]
 
 // Get the name a key prints on the current keyboard layout.
 //
 // The answer is the address of a UTF-8 string the library owns, or 0
-// for a key that prints nothing.  Pass the key code with a scancode of
-// -1, or 0 with a real scancode.  It is for showing a key binding to
-// the user, and NOT for reading typed text.
+// for a key that prints nothing.  Pass a key code, and the scancode is
+// ignored.  Pass -1, `GLFW_KEY_UNKNOWN`, to name a key by the scancode
+// instead.  It is for showing a key binding to the user, and not for
+// reading typed text.
 pub @ffi(library = "glfw", symbol = "glfwGetKeyName")
 fn glfw_get_key_name(key: Int, scancode: Int) -> Int [io, ffi]
 
@@ -554,9 +561,9 @@ fn glfw_get_required_instance_extensions(count: Int) -> Int [io, ffi]
 //
 // `instance` is a `VkInstance`, `allocator` is 0 and `surface` is the
 // address of a slot receiving the `VkSurfaceKHR` handle.  Answers a
-// Vulkan result code, so 0 is success and a failure is NEGATIVE.  The
-// window must have been created with the client interface hint set to
-// 0.
+// Vulkan result code, so 0 is success and a failure is negative.  The
+// window must have been created with `GLFW_CLIENT_API` set to 0,
+// `GLFW_NO_API`.
 pub @ffi(library = "glfw", symbol = "glfwCreateWindowSurface")
 fn glfw_create_window_surface(instance: Int, window: Int, allocator: Int,
                               surface: Int) -> Int [io, ffi]
