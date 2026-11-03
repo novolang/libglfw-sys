@@ -1,6 +1,6 @@
 [package]
 name        = "libglfw-sys"
-version     = "0.1.1"
+version     = "0.1.2"
 description = "Bindings over libglfw, the GLFW window and input library: the library, the monitors and their video modes, the window with its hints and its state, the event pump, the polled keyboard, mouse and clipboard, the timer, and the OpenGL context and Vulkan surface calls, one declaration per C entry point."
 license     = "Apache-2.0"
 
@@ -26,7 +26,7 @@ wraps       = "libglfw"
 tags        = ["ffi", "glfw", "window", "input", "opengl", "vulkan", "bindings"]
 repository  = "https://github.com/novolang/libglfw-sys"
 maintainers = ["novo-lang"]
-novo        = ">= 0.8.9"
+novo        = ">= 0.23.0"
 
 [docs.pages]
 "README.md" = "The C entry points of libglfw, one novo-lang declaration each"
